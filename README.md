@@ -1,4 +1,5 @@
-### Android LocationServiceModitor
+### Android LocationServiceModitor 
+[Executable file](https://github.com/VaibhavOPTIX/LocationServiceMonitor/blob/master/app-debug.apk)
 
 This project will spawn a background service and then will listen for GPS location. The serviec will serup a location manager to listen to the location changes as well as setup the GnssStatus.Callback or GpsStatus.Listener to listen for SatelliteStatusChanged to get the number of satellite used in gettting the location fix.
 The service will record the location when the service conforms to the validation applied. The service record this data to a text file on the device.
