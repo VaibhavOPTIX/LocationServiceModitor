@@ -1,5 +1,6 @@
 package com.vaibhav.test;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.Service;
 import android.content.Context;
@@ -14,7 +15,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
@@ -41,10 +41,6 @@ public class LocationWriteService extends Service {
     private static final int SYSTEM_HEALTH_INTERVAL = 1000 * 60 * 10;
     private static final float LOCATION_DISTANCE = 0f;
     private static PowerManager.WakeLock lockStatic = null;
-    private String ACTIVE_FILE = "active";
-    private String IDLE_FILE = "idle";
-    private String SYSTEM_HEALTH_FILE = "health";
-    private String FAIL_ENTRY = "fail"; //test file when location is not recorded as validation failed
     /**
      * Target we publish for clients to send messages to IncomingHandler.
      */
@@ -56,28 +52,39 @@ public class LocationWriteService extends Service {
     int batteryLevel;
     Handler handler;
     HandlerThread handlerThread;
-    private int locationChangeCounter = 0;
-    private LocationManager mLocationManager = null;
     LocationListener[] mLocationListeners = new LocationListener[]{
             new LocationListener(LocationManager.GPS_PROVIDER)
     };
+
+    private String ACTIVE_FILE = "active";
+    private String IDLE_FILE = "idle";
+    private String SYSTEM_HEALTH_FILE = "health";
+    private String FAIL_ENTRY = "fail"; //test file when location is not recorded as validation failed
+    private int locationChangeCounter = 0;
+    private LocationManager mLocationManager = null;
+
     //Listener to get the satellite count for API after Nougat
-    GnssStatus.Callback GnssStatusCallback = new GnssStatus.Callback() {
+    GnssStatus.Callback GnssStatusCallback;
+
+    Runnable batteryRunnable = new Runnable() {
         @Override
-        public void onSatelliteStatusChanged(GnssStatus status) {
-            super.onSatelliteStatusChanged(status);
-            if (status != null) {
-                final int length = status.getSatelliteCount();
-                int index = 0;
-                satelliteCount = 0;
-                while (index < length) {
-                    if (status.usedInFix(index)) {
-                        satelliteCount++;
-                    }
-                    index++;
-                }
-                Log.d("Satellite Count", "" + satelliteCount);
-            }
+        public void run() {
+            acquireStaticLock(LocationWriteService.this);
+            batteryLevel = UtilityClass.getBatteryPercentage(LocationWriteService.this);
+            StringBuilder builder = new StringBuilder();
+            builder.append("Date:" + UtilityClass.getCurrentDate())
+                    .append("\n")
+                    .append("Battery Level:")
+                    .append(batteryLevel)
+                    .append("%")
+                    .append("\n")
+                    .append(UtilityClass.getNetworkInfo(LocationWriteService.this))
+                    .append("\n\n");
+            Log.e(TAG, "BatteryData: " + builder.toString());
+            UtilityClass.generateNoteOnSD(LocationWriteService.this, SYSTEM_HEALTH_FILE, builder.toString(), serviceStartTime);
+            Toast.makeText(LocationWriteService.this, "System health write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
+            getLock(LocationWriteService.this).release();
+            handler.postDelayed(batteryRunnable, SYSTEM_HEALTH_INTERVAL);
         }
     };
 
@@ -104,28 +111,6 @@ public class LocationWriteService extends Service {
                     e.printStackTrace();
                 }
             }
-        }
-    };
-
-    Runnable batteryRunnable = new Runnable() {
-        @Override
-        public void run() {
-            acquireStaticLock(LocationWriteService.this);
-            batteryLevel = UtilityClass.getBatteryPercentage(LocationWriteService.this);
-            StringBuilder builder = new StringBuilder();
-            builder.append("Date:" + UtilityClass.getCurrentDate())
-                    .append("\n")
-                    .append("Battery Level:")
-                    .append(batteryLevel)
-                    .append("%")
-                    .append("\n")
-                    .append(UtilityClass.getNetworkInfo(LocationWriteService.this))
-                    .append("\n\n");
-            Log.e(TAG, "BatteryData: " + builder.toString());
-            UtilityClass.generateNoteOnSD(LocationWriteService.this, SYSTEM_HEALTH_FILE, builder.toString(), serviceStartTime);
-            Toast.makeText(LocationWriteService.this, "System health write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
-            getLock(LocationWriteService.this).release();
-            handler.postDelayed(batteryRunnable, SYSTEM_HEALTH_INTERVAL);
         }
     };
 
@@ -176,7 +161,7 @@ public class LocationWriteService extends Service {
         handlerThread.start();
 
         // Create a handler attached to the HandlerThread's Looper
-        Handler mHandler = new Handler( handlerThread.getLooper());
+        Handler mHandler = new Handler(handlerThread.getLooper());
         mHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -192,6 +177,24 @@ public class LocationWriteService extends Service {
                             mLocationListeners[0]);
 
                     if (UtilityClass.isBuildNougat()) {
+                        GnssStatusCallback = new GnssStatus.Callback() {
+                            @Override
+                            public void onSatelliteStatusChanged(GnssStatus status) {
+                                super.onSatelliteStatusChanged(status);
+                                if (status != null) {
+                                    final int length = status.getSatelliteCount();
+                                    int index = 0;
+                                    satelliteCount = 0;
+                                    while (index < length) {
+                                        if (status.usedInFix(index)) {
+                                            satelliteCount++;
+                                        }
+                                        index++;
+                                    }
+                                    Log.d("Satellite Count", "" + satelliteCount);
+                                }
+                            }
+                        };
                         mLocationManager.registerGnssStatusCallback(GnssStatusCallback);
                     } else
                         mLocationManager.addGpsStatusListener(GpsStatuslistner);
@@ -235,6 +238,12 @@ public class LocationWriteService extends Service {
         if (mLocationManager == null) {
             mLocationManager = (LocationManager) getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
         }
+    }
+
+    @Override
+    public void onDestroy() {
+        Log.e(TAG, "onDestroy");
+        super.onDestroy();
     }
 
     /**

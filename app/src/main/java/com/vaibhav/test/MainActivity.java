@@ -113,6 +113,8 @@ public class MainActivity extends AppCompatActivity {
                     //start Service
                     if (UtilityClass.isLocationEnabled(mContext)) {
                         startServiceAndBind();
+                        stopService.setEnabled(true);
+                        stopService.setOnClickListener(stopServiceListener);
                     } else {
                         /*
                          * In case the user has his location service turned off we prompt the user
@@ -140,24 +142,23 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        stopService.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mBound) {
-                    Message msg = Message.obtain(null, UtilityClass.STOP_SERVICE, 0, 0);
-                    try {
-                        mService.send(msg);
-                    } catch (RemoteException e) {
-                        e.printStackTrace();
-                    }
-                    unbindService(mConnection);
-                    mBound = false;
-                }
-
-            }
-        });
-
     }
+
+    View.OnClickListener stopServiceListener= new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            if (mBound) {
+                Message msg = Message.obtain(null, UtilityClass.STOP_SERVICE, 0, 0);
+                try {
+                    mService.send(msg);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+                unbindService(mConnection);
+                mBound = false;
+            }
+        }
+    };
 
     /**
      * This function is called when the user either presses the start service button or the app
