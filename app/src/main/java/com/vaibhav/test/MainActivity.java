@@ -1,6 +1,8 @@
 package com.vaibhav.test;
 
 import android.Manifest;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -13,6 +15,7 @@ import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -29,9 +32,9 @@ import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "MainActivity";
     public ServiceResultReceiver receiver;
     public Long serviceStartTime;
-    private static final String TAG = "MainActivity";
     Button startService, stopService;
     TextView startTime, status;
     boolean permissionGranted;
@@ -44,7 +47,7 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             if (mBound && serviceStartTime != null) {
                 Long timeDelta = UtilityClass.getUTC() - serviceStartTime;
-                startTime.setText("" + TimeUnit.MILLISECONDS.toMinutes(timeDelta)+ " Minutes");
+                startTime.setText("" + TimeUnit.MILLISECONDS.toMinutes(timeDelta) + " Minutes");
                 Log.e(TAG, "Time Updated");
             } else {
                 if (mBound) {
@@ -126,7 +129,17 @@ public class MainActivity extends AppCompatActivity {
         stopService.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                stopService(new Intent(mContext, LocationWriteService.class));
+                if (mBound) {
+                    Message msg = Message.obtain(null, UtilityClass.STOP_SERVICE, 0, 0);
+                    try {
+                        mService.send(msg);
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+                    unbindService(mConnection);
+                    mBound = false;
+                }
+
             }
         });
 
@@ -134,6 +147,15 @@ public class MainActivity extends AppCompatActivity {
 
     private void startServiceAndBind() {
         startTime.setText("0 Minutes");
+        AlarmManager mgr = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        Intent i = new Intent(this, OnAlarmReceiver.class);
+        PendingIntent pi = PendingIntent.getBroadcast(this, 0,
+                i, 0);
+
+        mgr.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + 60000,
+                300000,
+                pi);
         Intent serviceIntent = new Intent(mContext, LocationWriteService.class);
         serviceIntent.putExtra("receiver", receiver);
         startService(serviceIntent);
@@ -157,19 +179,21 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (UtilityClass.isMyServiceRunning(MainActivity.this, LocationWriteService.class)){
+        if (UtilityClass.isMyServiceRunning(MainActivity.this, LocationWriteService.class)) {
             startServiceAndBind();
             status.setText("Running");
-        }else
+        } else {
             status.setText("Not Running");
-
+            stopService.setEnabled(false);
+            stopService.setOnClickListener(null);
+        }
     }
 
     private void updateServiceRunningTime() {
         if (handler == null) {
             handler = new Handler();
         }
-        handler.postDelayed(runnable,500);
+        handler.postDelayed(runnable, 500);
     }
 
     private void checkFileWritePermission() {

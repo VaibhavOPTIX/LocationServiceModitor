@@ -1,7 +1,6 @@
 package com.vaibhav.test;
 
 import android.app.Activity;
-
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -10,7 +9,6 @@ import android.location.GpsSatellite;
 import android.location.GpsStatus;
 import android.location.Location;
 import android.location.LocationManager;
-
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -19,10 +17,12 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.PowerManager;
 import android.os.ResultReceiver;
 import android.support.annotation.RequiresApi;
 import android.util.Log;
 import android.widget.Toast;
+
 import java.util.Iterator;
 
 /**
@@ -33,14 +33,20 @@ import java.util.Iterator;
 //as a fallback use Google play service and fusedlocation
 //https://stackoverflow.com/questions/36436686/how-to-get-current-location-using-seperate-class-in-android/41981246#41981246
 
-    //https://developer.android.com/guide/components/bound-services.html use bound service to return result from service to activity to avoid data loss if the service was started at boot time
+//https://developer.android.com/guide/components/bound-services.html use bound service to return result from service to activity to avoid data loss if the service was started at boot time
 
 @RequiresApi(api = Build.VERSION_CODES.N)
 public class LocationWriteService extends Service {
+    public static final String LOCK_NAME_STATIC = "LocationWriteService.Static";
     private static final String TAG = "LocationWriteService";
     private static final int LOCATION_INTERVAL = 1000 * 60 * 2;
     private static final int SYSTEM_HEALTH_INTERVAL = 1000 * 60 * 10;
     private static final float LOCATION_DISTANCE = 0f;
+    private static PowerManager.WakeLock lockStatic = null;
+    /**
+     * Target we publish for clients to send messages to IncomingHandler.
+     */
+    final Messenger mMessenger = new Messenger(new IncomingHandler());
     public Long serviceStartTime;
     ResultReceiver receiver;
     // Binder given to clients
@@ -82,18 +88,13 @@ public class LocationWriteService extends Service {
     private String ACTIVE_FILE = "active";
     private String IDLE_FILE = "idle";
     private String SYSTEM_HEALTH_FILE = "health";
-    /**
-     * Target we publish for clients to send messages to IncomingHandler.
-     */
-    final Messenger mMessenger = new Messenger(new IncomingHandler());
-
-
     Runnable batteryRunnable = new Runnable() {
         @Override
         public void run() {
+            acquireStaticLock(LocationWriteService.this);
             batteryLevel = UtilityClass.getBatteryPercentage(LocationWriteService.this);
             StringBuilder builder = new StringBuilder();
-            builder.append("Date:"+UtilityClass.getCurrentDate())
+            builder.append("Date:" + UtilityClass.getCurrentDate())
                     .append("\n")
                     .append("Battery Level:")
                     .append(batteryLevel)
@@ -104,27 +105,26 @@ public class LocationWriteService extends Service {
             Log.e(TAG, "BatteryData: " + builder.toString());
             UtilityClass.generateNoteOnSD(LocationWriteService.this, SYSTEM_HEALTH_FILE, builder.toString(), serviceStartTime);
             Toast.makeText(LocationWriteService.this, "System health write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
+            getLock(LocationWriteService.this).release();
             handler.postDelayed(batteryRunnable, SYSTEM_HEALTH_INTERVAL);
         }
     };
+    private String FAIL_ENTRY = "fail";
 
-    /**
-     * Class used for the client Binder.  Because we know this service always
-     * runs in the same process as its clients, we don't need to deal with IPC.
-     */
-    class IncomingHandler extends Handler {
-        @Override
-        public void handleMessage(Message msg) {
-            Bundle bundle= new Bundle();
-            switch (msg.what) {
-                case UtilityClass.GET_START_TIME:
-                    bundle.putLong("startTime",serviceStartTime);
-                    receiver.send(Activity.RESULT_OK,bundle);
-                    break;
-                default:
-                    super.handleMessage(msg);
-            }
+    public static void acquireStaticLock(Context context) {
+        getLock(context).acquire();
+    }
+
+    synchronized private static PowerManager.WakeLock getLock(Context context) {
+        if (lockStatic == null) {
+            PowerManager mgr = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+
+            lockStatic = mgr.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                    LOCK_NAME_STATIC);
+            lockStatic.setReferenceCounted(true);
         }
+
+        return (lockStatic);
     }
 
     @Override
@@ -136,24 +136,22 @@ public class LocationWriteService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.e(TAG, "onStartCommand");
         super.onStartCommand(intent, flags, startId);
-        if(intent!=null && intent.getParcelableExtra("receiver")!=null)
+        if (intent != null && intent.getParcelableExtra("receiver") != null)
             receiver = intent.getParcelableExtra("receiver");
         return START_STICKY;
     }
-
-
 
     @Override
     public void onCreate() {
         Log.e(TAG, "onCreate");
         //TODO Log the service start time and send to activity;
-        serviceStartTime= UtilityClass.getUTC();
+        serviceStartTime = UtilityClass.getUTC();
 
         //reference https://medium.com/@ali.muzaffar/handlerthreads-and-why-you-should-be-using-them-in-your-android-apps-dc8bf1540341
         //https://guides.codepath.com/android/Managing-Threads-and-Custom-Services#executing-runnables-on-handlerthread
         // Create a new background thread for processing messages or runnables sequentially
         //if (handlerThread == null) {
-            handlerThread = new HandlerThread("LocationThread");
+        handlerThread = new HandlerThread("LocationThread");
         //}
         // Starts the background thread
         handlerThread.start();
@@ -210,8 +208,10 @@ public class LocationWriteService extends Service {
     public void onDestroy() {
         Log.e(TAG, "onDestroy");
         super.onDestroy();
+        getLock(this).release();
         handler.removeCallbacks(batteryRunnable);
         handlerThread.quitSafely();
+        stopSelf();
         if (mLocationManager != null) {
             for (int i = 0; i < mLocationListeners.length; i++) {
                 try {
@@ -230,6 +230,28 @@ public class LocationWriteService extends Service {
         }
     }
 
+    /**
+     * Class used for the client Binder.  Because we know this service always
+     * runs in the same process as its clients, we don't need to deal with IPC.
+     */
+    class IncomingHandler extends Handler {
+        @Override
+        public void handleMessage(Message msg) {
+            Bundle bundle = new Bundle();
+            switch (msg.what) {
+                case UtilityClass.GET_START_TIME:
+                    bundle.putLong("startTime", serviceStartTime);
+                    receiver.send(Activity.RESULT_OK, bundle);
+                    break;
+                case UtilityClass.STOP_SERVICE:
+                    onDestroy();
+                    break;
+                default:
+                    super.handleMessage(msg);
+            }
+        }
+    }
+
     private class LocationListener implements android.location.LocationListener {
         Location mLastLocation;
 
@@ -243,31 +265,34 @@ public class LocationWriteService extends Service {
             Log.e(TAG, "onLocationChanged: " + location);
             mLastLocation.set(location);
             locationChangeCounter += 2;
-
+            acquireStaticLock(LocationWriteService.this);
+            StringBuilder builder = new StringBuilder();
+            builder.append("Date:" + UtilityClass.getCurrentDate())
+                    .append("\n")
+                    .append("Latitude: ")
+                    .append(location.getLatitude())
+                    .append("\n")
+                    .append("Longitude: ")
+                    .append(location.getLongitude())
+                    .append("\n")
+                    .append("UTC Time: ")
+                    .append(location.getTime())
+                    .append("\n")
+                    .append("Velocity: ")
+                    .append(location.getSpeed() * 3.6)/*1 m/s	*	3600 m/hr/1 m/s	*	1 km/hr/1000 m/hr	=	3.6 km/hr therefore 1m/s -3.6km/h*/
+                    .append("\n")
+                    .append("Satellite Count: ")
+                    .append(satelliteCount)
+                    .append("\n")
+                    .append("Accuracy: ")
+                    .append(location.getAccuracy())
+                    .append("\n\n");
+            Log.e("Data to be stored", builder.toString());
             if (location.getProvider() != null
                     && location.getProvider().equalsIgnoreCase(LocationManager.GPS_PROVIDER)
                     && satelliteCount >= 5
                     && location.getAccuracy() >= 2
                     && location.getAccuracy() <= 15) {
-                StringBuilder builder = new StringBuilder();
-                builder.append("Date:"+UtilityClass.getCurrentDate())
-                        .append("\n")
-                        .append("Latitude: ")
-                        .append(location.getLatitude())
-                        .append("\n")
-                        .append("Longitude: ")
-                        .append(location.getLongitude())
-                        .append("\n")
-                        .append("UTC Time: ")
-                        .append(location.getTime())
-                        .append("\n")
-                        .append("Velocity: ")
-                        .append(location.getSpeed() * 3.6)/*1 m/s	*	3600 m/hr/1 m/s	*	1 km/hr/1000 m/hr	=	3.6 km/hr therefore 1m/s -3.6km/h*/
-                        .append("\n")
-                        .append("Satellite Count: ")
-                        .append(satelliteCount)
-                        .append("\n\n");
-                Log.e("Data to be stored", builder.toString());
                 if (UtilityClass.generateNoteOnSD(LocationWriteService.this, ACTIVE_FILE, builder.toString(), serviceStartTime)) {
                     Toast.makeText(LocationWriteService.this, "Active write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
                 }
@@ -276,15 +301,11 @@ public class LocationWriteService extends Service {
                     Toast.makeText(LocationWriteService.this, "Idle write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
                     locationChangeCounter = 0;
                 }
+            } else {
+                UtilityClass.generateNoteOnSD(LocationWriteService.this, FAIL_ENTRY, builder.toString(), serviceStartTime);
+                Toast.makeText(LocationWriteService.this, "Idle write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
             }
-
-            location.getLatitude();
-            location.getLongitude();
-            Log.e("Latitude", String.valueOf(location.getLatitude()));
-            Log.e("Longitude", String.valueOf(location.getLongitude()));
-            Log.e("Provider", location.getProvider());
-
-
+            getLock(LocationWriteService.this).release();
         }
 
         @Override

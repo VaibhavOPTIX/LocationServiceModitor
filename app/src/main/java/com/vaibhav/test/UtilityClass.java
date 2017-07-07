@@ -45,7 +45,7 @@ public class UtilityClass {
     public static final int PERMISSION_ALL = 1;
     public static final String[] PERMISSIONS = {Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.ACCESS_COARSE_LOCATION};
     public static final int GET_START_TIME = 1;
-    public static final int GET_END_TIME = 2;
+    public static final int STOP_SERVICE = 2;
     private final String LOG_TAG = "UtilityClass";
 
     public static boolean hasPermissions(Context context, String... permissions) {
