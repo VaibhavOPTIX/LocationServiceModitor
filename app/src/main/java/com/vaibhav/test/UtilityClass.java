@@ -48,6 +48,7 @@ public class UtilityClass {
     public static final int STOP_SERVICE = 2;
     private final String LOG_TAG = "UtilityClass";
 
+    /*Check if the necessary permissions were granted and return boolean */
     public static boolean hasPermissions(Context context, String... permissions) {
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && context != null && permissions != null) {
             for (String permission : permissions) {
@@ -58,7 +59,10 @@ public class UtilityClass {
         }
         return true;
     }
-
+    /* Check if the phone is running  Nougat and above
+     * This was to add GnssStatus.Callback instead of GpsStatus.Listener to get the Satellites
+     * information as GpsStatus.Listener is deprecated
+     * */
     public static boolean isBuildNougat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             return true;
@@ -66,6 +70,7 @@ public class UtilityClass {
         return false;
     }
 
+    // to check if the Location setting is enabled or not
     public static boolean isLocationEnabled(Context context) {
         int locationMode = 0;
         String locationProviders;
@@ -86,6 +91,7 @@ public class UtilityClass {
             return !TextUtils.isEmpty(locationProviders);
         }
     }
+
 
     public static Long getUTC() {
         Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
@@ -113,6 +119,13 @@ public class UtilityClass {
     }
 
 
+    /** This function writes to the file with the data passed
+     *  @param context : Context of the calling component/service
+     *  @param sFileName : the file name type indicating the file time being written to. values can
+     *                      be "active","idle" or "health"
+     *  @param sBody : the content that is to be written
+     *  @param startTime : the Service start time, that will be used to reference the other file of
+     *                      the "sFileName" to query out the most recent file*/
     public static boolean generateNoteOnSD(Context context, String sFileName, String sBody, Long startTime) {
         try {
             File root = new File(Environment.getExternalStorageDirectory(), "Numadic_Data");
@@ -131,6 +144,10 @@ public class UtilityClass {
         }
     }
 
+    /** This function is responsible to get the most recent file to write to, here all the files in
+     *  the directory are queried, after which the files are filtered for the file type being
+     *  written for and finally is is compared to the service start time to get the most recent
+     *  after which a final size check is done to confirm file is <1MB else spawn a new file and return that*/
     private static File getFile(File root, String sFileName, Long startTime) {
         String tempName = sFileName + "_" + startTime + ".txt";
         List<String> files = new ArrayList<>();
@@ -173,6 +190,7 @@ public class UtilityClass {
         }
     }
 
+    /*Check if the service is running on app resume and  bing to the service to get relevant data*/
     public static boolean isMyServiceRunning(Context mContext, Class<?> serviceClass) {
         ActivityManager manager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
         for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {

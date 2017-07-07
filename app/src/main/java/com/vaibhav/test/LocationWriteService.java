@@ -29,11 +29,9 @@ import java.util.Iterator;
  * Created by Vaibhav Barad on 4/7/17.
  */
 
-//https://stackoverflow.com/questions/14478179/background-service-with-location-listener-in-android
-//as a fallback use Google play service and fusedlocation
-//https://stackoverflow.com/questions/36436686/how-to-get-current-location-using-seperate-class-in-android/41981246#41981246
-
-//https://developer.android.com/guide/components/bound-services.html use bound service to return result from service to activity to avoid data loss if the service was started at boot time
+/* https://developer.android.com/guide/components/bound-services.html
+ * use bound service to return result from service to activity to avoid data loss if the service was started at boot time
+ * */
 
 @RequiresApi(api = Build.VERSION_CODES.N)
 public class LocationWriteService extends Service {
@@ -43,6 +41,10 @@ public class LocationWriteService extends Service {
     private static final int SYSTEM_HEALTH_INTERVAL = 1000 * 60 * 10;
     private static final float LOCATION_DISTANCE = 0f;
     private static PowerManager.WakeLock lockStatic = null;
+    private String ACTIVE_FILE = "active";
+    private String IDLE_FILE = "idle";
+    private String SYSTEM_HEALTH_FILE = "health";
+    private String FAIL_ENTRY = "fail"; //test file when location is not recorded as validation failed
     /**
      * Target we publish for clients to send messages to IncomingHandler.
      */
@@ -51,15 +53,35 @@ public class LocationWriteService extends Service {
     ResultReceiver receiver;
     // Binder given to clients
     int satelliteCount = 0;
-    GnssStatus.Callback GnssStatusCallback;
     int batteryLevel;
     Handler handler;
     HandlerThread handlerThread;
+    private int locationChangeCounter = 0;
+    private LocationManager mLocationManager = null;
     LocationListener[] mLocationListeners = new LocationListener[]{
             new LocationListener(LocationManager.GPS_PROVIDER)
     };
-    private int locationChangeCounter = 0;
-    private LocationManager mLocationManager = null;
+    //Listener to get the satellite count for API after Nougat
+    GnssStatus.Callback GnssStatusCallback = new GnssStatus.Callback() {
+        @Override
+        public void onSatelliteStatusChanged(GnssStatus status) {
+            super.onSatelliteStatusChanged(status);
+            if (status != null) {
+                final int length = status.getSatelliteCount();
+                int index = 0;
+                satelliteCount = 0;
+                while (index < length) {
+                    if (status.usedInFix(index)) {
+                        satelliteCount++;
+                    }
+                    index++;
+                }
+                Log.d("Satellite Count", "" + satelliteCount);
+            }
+        }
+    };
+
+    //Listener to get the satellite count
     GpsStatus.Listener GpsStatuslistner = new GpsStatus.Listener() {
         @Override
         public void onGpsStatusChanged(int event) {
@@ -75,8 +97,7 @@ public class LocationWriteService extends Service {
                             if (satellite.usedInFix()) {
                                 satelliteCount++;
                             }
-
-                            Log.d("SATELLITE Count in Fix", "" + satelliteCount);
+                            Log.d("Satellite Count", "" + satelliteCount);
                         }
                     }
                 } catch (SecurityException e) {
@@ -85,9 +106,7 @@ public class LocationWriteService extends Service {
             }
         }
     };
-    private String ACTIVE_FILE = "active";
-    private String IDLE_FILE = "idle";
-    private String SYSTEM_HEALTH_FILE = "health";
+
     Runnable batteryRunnable = new Runnable() {
         @Override
         public void run() {
@@ -109,8 +128,8 @@ public class LocationWriteService extends Service {
             handler.postDelayed(batteryRunnable, SYSTEM_HEALTH_INTERVAL);
         }
     };
-    private String FAIL_ENTRY = "fail";
 
+    // this used to get a wakelock when a file is to be written to as it may so happen the CPU is asleep
     public static void acquireStaticLock(Context context) {
         getLock(context).acquire();
     }
@@ -123,7 +142,6 @@ public class LocationWriteService extends Service {
                     LOCK_NAME_STATIC);
             lockStatic.setReferenceCounted(true);
         }
-
         return (lockStatic);
     }
 
@@ -136,6 +154,7 @@ public class LocationWriteService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.e(TAG, "onStartCommand");
         super.onStartCommand(intent, flags, startId);
+        // Extract the receiver passed into the service by the MainActivity and initialize the ResultReceiver.
         if (intent != null && intent.getParcelableExtra("receiver") != null)
             receiver = intent.getParcelableExtra("receiver");
         return START_STICKY;
@@ -144,25 +163,25 @@ public class LocationWriteService extends Service {
     @Override
     public void onCreate() {
         Log.e(TAG, "onCreate");
-        //TODO Log the service start time and send to activity;
         serviceStartTime = UtilityClass.getUTC();
 
-        //reference https://medium.com/@ali.muzaffar/handlerthreads-and-why-you-should-be-using-them-in-your-android-apps-dc8bf1540341
-        //https://guides.codepath.com/android/Managing-Threads-and-Custom-Services#executing-runnables-on-handlerthread
-        // Create a new background thread for processing messages or runnables sequentially
-        //if (handlerThread == null) {
+        /**reference:
+         *  https://medium.com/@ali.muzaffar/handlerthreads-and-why-you-should-be-using-them-in-your-android-apps-dc8bf1540341
+         *  https://guides.codepath.com/android/Managing-Threads-and-Custom-Services#executing-runnables-on-handlerthread
+         */
+
+        // Creates a new background thread for processing messages or runnables sequentially
         handlerThread = new HandlerThread("LocationThread");
-        //}
         // Starts the background thread
         handlerThread.start();
 
-        Looper looper = handlerThread.getLooper();
-        Handler mHandler = new Handler(looper);
+        // Create a handler attached to the HandlerThread's Looper
+        Handler mHandler = new Handler( handlerThread.getLooper());
         mHandler.post(new Runnable() {
             @Override
             public void run() {
                 initializeLocationManager();
-                //run an handler to get batter level and network info every 30 mins
+                //run an handler to get/write battery level and network info every 10 minutes
                 if (handler == null) {
                     handler = new Handler();
                 }
@@ -171,25 +190,8 @@ public class LocationWriteService extends Service {
                     mLocationManager.requestLocationUpdates(
                             LocationManager.GPS_PROVIDER, LOCATION_INTERVAL, LOCATION_DISTANCE,
                             mLocationListeners[0]);
+
                     if (UtilityClass.isBuildNougat()) {
-                        GnssStatusCallback = new GnssStatus.Callback() {
-                            @Override
-                            public void onSatelliteStatusChanged(GnssStatus status) {
-                                super.onSatelliteStatusChanged(status);
-                                if (status != null) {
-                                    final int length = status.getSatelliteCount();
-                                    int index = 0;
-                                    satelliteCount = 0;
-                                    while (index < length) {
-                                        if (status.usedInFix(index)) {
-                                            satelliteCount++;
-                                        }
-                                        index++;
-                                    }
-                                    Log.d("SATELLITE Count in Fix", "" + satelliteCount);
-                                }
-                            }
-                        };
                         mLocationManager.registerGnssStatusCallback(GnssStatusCallback);
                     } else
                         mLocationManager.addGpsStatusListener(GpsStatuslistner);
@@ -204,8 +206,13 @@ public class LocationWriteService extends Service {
 
     }
 
-    @Override
-    public void onDestroy() {
+
+    /*
+    * removes the handler responsible for getting/writing the battery information and handlerThread
+    * is also quit to stop the service process and finally the service itself is stopped , also
+    * removes all location updates for the specified LocationListener.
+    * */
+    public void releaseResources() {
         Log.e(TAG, "onDestroy");
         super.onDestroy();
         getLock(this).release();
@@ -244,7 +251,7 @@ public class LocationWriteService extends Service {
                     receiver.send(Activity.RESULT_OK, bundle);
                     break;
                 case UtilityClass.STOP_SERVICE:
-                    onDestroy();
+                    releaseResources();
                     break;
                 default:
                     super.handleMessage(msg);
@@ -303,7 +310,7 @@ public class LocationWriteService extends Service {
                 }
             } else {
                 UtilityClass.generateNoteOnSD(LocationWriteService.this, FAIL_ENTRY, builder.toString(), serviceStartTime);
-                Toast.makeText(LocationWriteService.this, "Idle write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(LocationWriteService.this, "Fail write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
             }
             getLock(LocationWriteService.this).release();
         }

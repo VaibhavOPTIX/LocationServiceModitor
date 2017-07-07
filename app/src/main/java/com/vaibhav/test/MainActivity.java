@@ -33,10 +33,15 @@ import java.util.concurrent.TimeUnit;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
+
     public ServiceResultReceiver receiver;
+
+    //to get the reference of the start time of the service to calculate the service elapsed time
     public Long serviceStartTime;
+
     Button startService, stopService;
     TextView startTime, status;
+
     boolean permissionGranted;
     Context mContext;
     Handler handler;
@@ -92,8 +97,13 @@ public class MainActivity extends AppCompatActivity {
         mContext = MainActivity.this;
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
         initializeViewId();
+
+        //Check if the required permissions are granted. Required for system after API 23
         checkFileWritePermission();
+
+        // Setup the callback for when data is received from the service
         setupServiceReceiver();
 
         startService.setOnClickListener(new View.OnClickListener() {
@@ -104,6 +114,10 @@ public class MainActivity extends AppCompatActivity {
                     if (UtilityClass.isLocationEnabled(mContext)) {
                         startServiceAndBind();
                     } else {
+                        /*
+                         * In case the user has his location service turned off we prompt the user
+                         * to start the service
+                         * */
                         final AlertDialog dialog = UtilityClass.ShowAlertDialog(MainActivity.this, mContext.getResources().getString(R.string.turn_on_location), "OK", "Cancel");
                         Button btnPositive = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
                         btnPositive.setOnClickListener(new View.OnClickListener() {
@@ -145,6 +159,12 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    /**
+     * This function is called when the user either presses the start service button or the app
+     * resumed and called onResume() to bind to the service again.
+     * This function is responsible for setting up the alarm manager to keep polling the service
+     * start and keeping it alive
+     */
     private void startServiceAndBind() {
         startTime.setText("0 Minutes");
         AlarmManager mgr = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
@@ -159,10 +179,12 @@ public class MainActivity extends AppCompatActivity {
         Intent serviceIntent = new Intent(mContext, LocationWriteService.class);
         serviceIntent.putExtra("receiver", receiver);
         startService(serviceIntent);
-        bindService(serviceIntent, mConnection, Context.BIND_AUTO_CREATE);
+        if (!mBound)
+            bindService(serviceIntent, mConnection, Context.BIND_AUTO_CREATE);
         updateServiceRunningTime();
     }
 
+    // Setup the callback for when data is received from the service
     public void setupServiceReceiver() {
         receiver = new ServiceResultReceiver(new Handler());
         // This is where we specify what happens when data is received from the service
@@ -179,6 +201,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        /*Check if the service is running on app resume and  bing to the service to get relevant data*/
         if (UtilityClass.isMyServiceRunning(MainActivity.this, LocationWriteService.class)) {
             startServiceAndBind();
             status.setText("Running");
@@ -189,6 +212,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Start a handler to update the service running time as long as the activity is running and
+     * remove the handler otherwise, initially the call is made at 500 millisecond but later the
+     * handler is called every 1 minute
+     */
     private void updateServiceRunningTime() {
         if (handler == null) {
             handler = new Handler();
@@ -196,6 +224,10 @@ public class MainActivity extends AppCompatActivity {
         handler.postDelayed(runnable, 500);
     }
 
+    /**
+     * Check if the necessary permissions were granted before starting the application, in case the
+     * permissions were not granted prompt he user to grant the permissions
+     */
     private void checkFileWritePermission() {
         if (!UtilityClass.hasPermissions(this, UtilityClass.PERMISSIONS)) {
             permissionGranted = false;
@@ -205,6 +237,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * this is called after the ActivityCompat.requestPermissions() to get the result for the request permissions
+     */
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         switch (requestCode) {
@@ -225,6 +260,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Initializing the view ID for the activity
+     */
     private void initializeViewId() {
         startService = (Button) findViewById(R.id.startService);
         stopService = (Button) findViewById(R.id.stopService);
@@ -232,6 +270,12 @@ public class MainActivity extends AppCompatActivity {
         status = (TextView) findViewById(R.id.status);
     }
 
+
+    /**
+     * If the activity was removed from foreground for a long time and was stopped by either
+     * swiping it, but since the service was bound to the activity we have to unbind the service
+     * to avoid service leaks
+     */
     @Override
     protected void onStop() {
         super.onStop();
