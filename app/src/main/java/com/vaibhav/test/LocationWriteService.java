@@ -216,9 +216,11 @@ public class LocationWriteService extends Service {
     * removes all location updates for the specified LocationListener.
     * */
     public void releaseResources() {
-        Log.e(TAG, "onDestroy");
+        Log.e(TAG, "releaseResources");
         super.onDestroy();
-        getLock(this).release();
+        if (lockStatic!=null && lockStatic.isHeld())
+            getLock(this).release();
+
         handler.removeCallbacks(batteryRunnable);
         handlerThread.quitSafely();
         stopSelf();

@@ -156,6 +156,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 unbindService(mConnection);
                 mBound = false;
+                handler.removeCallbacks(runnable);
+                status.setText("Not Running");
+                stopService.setEnabled(false);
+                stopService.setOnClickListener(null);
             }
         }
     };
@@ -282,6 +286,7 @@ public class MainActivity extends AppCompatActivity {
         super.onStop();
         // Unbind from the service
         if (mBound) {
+            handler.removeCallbacks(runnable);
             unbindService(mConnection);
             mBound = false;
         }
