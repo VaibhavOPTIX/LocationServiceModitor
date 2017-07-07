@@ -23,5 +23,5 @@ and send through IPC, and receive results they supply with send(int, Bundle).
 [Why Using a HandlerThread is good](https://medium.com/@ali.muzaffar/handlerthreads-and-why-you-should-be-using-them-in-your-android-apps-dc8bf1540341)
 
 ### Installation & Development. 
-1. clone this repo: `https://github.com/VaibhavOPTIX/LocationServiceModitor.git`
+1. clone this repo: `https://github.com/VaibhavOPTIX/LocationServiceMonitor.git`
 2. run it on Android studio.
