@@ -1,6 +1,5 @@
 package com.vaibhav.test;
 
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.Service;
 import android.content.Context;
@@ -55,24 +54,21 @@ public class LocationWriteService extends Service {
     LocationListener[] mLocationListeners = new LocationListener[]{
             new LocationListener(LocationManager.GPS_PROVIDER)
     };
-
+    //Listener to get the satellite count for API after Nougat
+    GnssStatus.Callback GnssStatusCallback;
     private String ACTIVE_FILE = "active";
     private String IDLE_FILE = "idle";
     private String SYSTEM_HEALTH_FILE = "health";
     private String FAIL_ENTRY = "fail"; //test file when location is not recorded as validation failed
     private int locationChangeCounter = 0;
     private LocationManager mLocationManager = null;
-
-    //Listener to get the satellite count for API after Nougat
-    GnssStatus.Callback GnssStatusCallback;
-
     Runnable batteryRunnable = new Runnable() {
         @Override
         public void run() {
             acquireStaticLock(LocationWriteService.this);
             batteryLevel = UtilityClass.getBatteryPercentage(LocationWriteService.this);
             StringBuilder builder = new StringBuilder();
-            builder.append("Date:" + UtilityClass.getCurrentDate())
+            builder.append("Time: " + UtilityClass.getCurrentDate())
                     .append("\n")
                     .append("Battery Level:")
                     .append(batteryLevel)
@@ -80,7 +76,6 @@ public class LocationWriteService extends Service {
                     .append("\n")
                     .append(UtilityClass.getNetworkInfo(LocationWriteService.this))
                     .append("\n\n");
-            Log.e(TAG, "BatteryData: " + builder.toString());
             UtilityClass.generateNoteOnSD(LocationWriteService.this, SYSTEM_HEALTH_FILE, builder.toString(), serviceStartTime);
             Toast.makeText(LocationWriteService.this, "System health write Complete\n" + builder.toString(), Toast.LENGTH_SHORT).show();
             getLock(LocationWriteService.this).release();
@@ -104,7 +99,6 @@ public class LocationWriteService extends Service {
                             if (satellite.usedInFix()) {
                                 satelliteCount++;
                             }
-                            Log.d("Satellite Count", "" + satelliteCount);
                         }
                     }
                 } catch (SecurityException e) {
@@ -137,7 +131,6 @@ public class LocationWriteService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.e(TAG, "onStartCommand");
         super.onStartCommand(intent, flags, startId);
         // Extract the receiver passed into the service by the MainActivity and initialize the ResultReceiver.
         if (intent != null && intent.getParcelableExtra("receiver") != null)
@@ -147,7 +140,6 @@ public class LocationWriteService extends Service {
 
     @Override
     public void onCreate() {
-        Log.e(TAG, "onCreate");
         serviceStartTime = UtilityClass.getUTC();
 
         /**reference:
@@ -191,7 +183,6 @@ public class LocationWriteService extends Service {
                                         }
                                         index++;
                                     }
-                                    Log.d("Satellite Count", "" + satelliteCount);
                                 }
                             }
                         };
@@ -216,9 +207,8 @@ public class LocationWriteService extends Service {
     * removes all location updates for the specified LocationListener.
     * */
     public void releaseResources() {
-        Log.e(TAG, "releaseResources");
         super.onDestroy();
-        if (lockStatic!=null && lockStatic.isHeld())
+        if (lockStatic != null && lockStatic.isHeld())
             getLock(this).release();
 
         handler.removeCallbacks(batteryRunnable);
@@ -236,7 +226,6 @@ public class LocationWriteService extends Service {
     }
 
     private void initializeLocationManager() {
-        Log.e(TAG, "initializeLocationManager");
         if (mLocationManager == null) {
             mLocationManager = (LocationManager) getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
         }
@@ -244,7 +233,6 @@ public class LocationWriteService extends Service {
 
     @Override
     public void onDestroy() {
-        Log.e(TAG, "onDestroy");
         super.onDestroy();
     }
 
@@ -274,18 +262,16 @@ public class LocationWriteService extends Service {
         Location mLastLocation;
 
         public LocationListener(String provider) {
-            Log.e(TAG, "LocationListener " + provider);
             mLastLocation = new Location(provider);
         }
 
         @Override
         public void onLocationChanged(Location location) {
-            Log.e(TAG, "onLocationChanged: " + location);
             mLastLocation.set(location);
             locationChangeCounter += 2;
             acquireStaticLock(LocationWriteService.this);
             StringBuilder builder = new StringBuilder();
-            builder.append("Date:" + UtilityClass.getCurrentDate())
+            builder.append("Time:" + UtilityClass.getCurrentDate())
                     .append("\n")
                     .append("Latitude: ")
                     .append(location.getLatitude())
@@ -298,14 +284,15 @@ public class LocationWriteService extends Service {
                     .append("\n")
                     .append("Velocity: ")
                     .append(location.getSpeed() * 3.6)/*1 m/s	*	3600 m/hr/1 m/s	*	1 km/hr/1000 m/hr	=	3.6 km/hr therefore 1m/s -3.6km/h*/
+                    .append(" kmph")
                     .append("\n")
                     .append("Satellite Count: ")
                     .append(satelliteCount)
                     .append("\n")
                     .append("Accuracy: ")
                     .append(location.getAccuracy())
+                    .append("m")
                     .append("\n\n");
-            Log.e("Data to be stored", builder.toString());
             if (location.getProvider() != null
                     && location.getProvider().equalsIgnoreCase(LocationManager.GPS_PROVIDER)
                     && satelliteCount >= 5
@@ -328,17 +315,14 @@ public class LocationWriteService extends Service {
 
         @Override
         public void onProviderDisabled(String provider) {
-            Log.e(TAG, "onProviderDisabled: " + provider);
         }
 
         @Override
         public void onProviderEnabled(String provider) {
-            Log.e(TAG, "onProviderEnabled: " + provider);
         }
 
         @Override
         public void onStatusChanged(String provider, int status, Bundle extras) {
-            Log.e(TAG, "onStatusChanged: " + provider);
         }
     }
 }

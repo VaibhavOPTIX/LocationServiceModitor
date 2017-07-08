@@ -22,7 +22,6 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
@@ -53,10 +52,8 @@ public class MainActivity extends AppCompatActivity {
             if (mBound && serviceStartTime != null) {
                 Long timeDelta = UtilityClass.getUTC() - serviceStartTime;
                 startTime.setText("" + TimeUnit.MILLISECONDS.toMinutes(timeDelta) + " Minutes");
-                Log.e(TAG, "Time Updated");
             } else {
                 if (mBound) {
-                    Log.e(TAG, "start time not available");
                     // Create and send a message to the service, using a supported 'what' value
                     Message msg = Message.obtain(null, UtilityClass.GET_START_TIME, 0, 0);
                     try {
@@ -87,6 +84,25 @@ public class MainActivity extends AppCompatActivity {
         public void onServiceDisconnected(ComponentName arg0) {
             mService = null;
             mBound = false;
+        }
+    };
+    View.OnClickListener stopServiceListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            if (mBound) {
+                Message msg = Message.obtain(null, UtilityClass.STOP_SERVICE, 0, 0);
+                try {
+                    mService.send(msg);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+                unbindService(mConnection);
+                mBound = false;
+                handler.removeCallbacks(runnable);
+                status.setText("Not Running");
+                stopService.setEnabled(false);
+                stopService.setOnClickListener(null);
+            }
         }
     };
 
@@ -144,26 +160,6 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    View.OnClickListener stopServiceListener= new View.OnClickListener() {
-        @Override
-        public void onClick(View v) {
-            if (mBound) {
-                Message msg = Message.obtain(null, UtilityClass.STOP_SERVICE, 0, 0);
-                try {
-                    mService.send(msg);
-                } catch (RemoteException e) {
-                    e.printStackTrace();
-                }
-                unbindService(mConnection);
-                mBound = false;
-                handler.removeCallbacks(runnable);
-                status.setText("Not Running");
-                stopService.setEnabled(false);
-                stopService.setOnClickListener(null);
-            }
-        }
-    };
-
     /**
      * This function is called when the user either presses the start service button or the app
      * resumed and called onResume() to bind to the service again.
@@ -171,7 +167,7 @@ public class MainActivity extends AppCompatActivity {
      * start and keeping it alive
      */
     private void startServiceAndBind() {
-        startTime.setText("0 Minutes");
+        startTime.setText("Initializing");
         AlarmManager mgr = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         Intent i = new Intent(this, OnAlarmReceiver.class);
         PendingIntent pi = PendingIntent.getBroadcast(this, 0,
@@ -273,6 +269,7 @@ public class MainActivity extends AppCompatActivity {
         stopService = (Button) findViewById(R.id.stopService);
         startTime = (TextView) findViewById(R.id.startTime);
         status = (TextView) findViewById(R.id.status);
+        startTime.setText("Initializing");
     }
 
 

@@ -59,6 +59,7 @@ public class UtilityClass {
         }
         return true;
     }
+
     /* Check if the phone is running  Nougat and above
      * This was to add GnssStatus.Callback instead of GpsStatus.Listener to get the Satellites
      * information as GpsStatus.Listener is deprecated
@@ -119,13 +120,16 @@ public class UtilityClass {
     }
 
 
-    /** This function writes to the file with the data passed
-     *  @param context : Context of the calling component/service
-     *  @param sFileName : the file name type indicating the file time being written to. values can
-     *                      be "active","idle" or "health"
-     *  @param sBody : the content that is to be written
-     *  @param startTime : the Service start time, that will be used to reference the other file of
-     *                      the "sFileName" to query out the most recent file*/
+    /**
+     * This function writes to the file with the data passed
+     *
+     * @param context   : Context of the calling component/service
+     * @param sFileName : the file name type indicating the file time being written to. values can
+     *                  be "active","idle" or "health"
+     * @param sBody     : the content that is to be written
+     * @param startTime : the Service start time, that will be used to reference the other file of
+     *                  the "sFileName" to query out the most recent file
+     */
     public static boolean generateNoteOnSD(Context context, String sFileName, String sBody, Long startTime) {
         try {
             File root = new File(Environment.getExternalStorageDirectory(), "Numadic_Data");
@@ -144,10 +148,12 @@ public class UtilityClass {
         }
     }
 
-    /** This function is responsible to get the most recent file to write to, here all the files in
-     *  the directory are queried, after which the files are filtered for the file type being
-     *  written for and finally is is compared to the service start time to get the most recent
-     *  after which a final size check is done to confirm file is <1MB else spawn a new file and return that*/
+    /**
+     * This function is responsible to get the most recent file to write to, here all the files in
+     * the directory are queried, after which the files are filtered for the file type being
+     * written for and finally is is compared to the service start time to get the most recent
+     * after which a final size check is done to confirm file is <1MB else spawn a new file and return that
+     */
     private static File getFile(File root, String sFileName, Long startTime) {
         String tempName = sFileName + "_" + startTime + ".txt";
         List<String> files = new ArrayList<>();
@@ -163,12 +169,13 @@ public class UtilityClass {
                     files.add(f.getName());
                 }
             }
-
+            //check if there are files that correspond to the file type being written to.
             for (String fileName : files) {
                 if (fileName.split("_")[0].equalsIgnoreCase(sFileName)) {
                     files_temps.add(fileName);
                 }
             }
+            //sort the temp list to get the most recent file of the specified type
             Collections.sort(files_temps, new Comparator<String>() {
                 @Override
                 public int compare(String o1, String o2) {
